@@ -273,10 +273,21 @@ curl -N -X POST http://localhost:8000/chat/completions \
       }'
 ```
 
-For Vapi, expose the service with HTTPS and set the Custom LLM URL to the base
-URL. Vapi appends `/chat/completions`, so if your tunnel is
-`https://example.trycloudflare.com`, put this in Vapi:
+Vapi runs in the cloud, so it cannot call `localhost` on your laptop. To test
+this local backend from Vapi, expose it with an HTTPS tunnel and put the tunnel
+base URL in the Vapi Custom LLM settings. The helper script below starts the
+local stub backend and opens a temporary Cloudflare Tunnel:
+
+```bash
+./scripts/start_vapi_local.sh
+```
+
+When Cloudflare prints a URL like `https://example.trycloudflare.com`, put only
+that base URL in Vapi. Vapi appends `/chat/completions` automatically:
 
 ```text
 https://example.trycloudflare.com
 ```
+
+Do **not** put `http://localhost:8000` in Vapi unless Vapi is running on the same
+machine/network and can actually reach that host.

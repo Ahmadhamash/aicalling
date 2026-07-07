@@ -73,6 +73,10 @@ async def retrieve_context(
         or category constraints).
     """
 
+    if not settings.rag_enabled:
+        log_event(logger, logging.INFO, "rag_skipped", reason="disabled")
+        return None
+
     if should_skip_rag(query):
         log_event(logger, logging.INFO, "rag_skipped", reason="chitchat")
         return None

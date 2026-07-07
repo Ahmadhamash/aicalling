@@ -1,0 +1,16 @@
+# --- Web framework / server ---
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.27,<1.0   # pulls in uvloop + httptools
+
+# --- LLM / embeddings ---
+openai>=1.30,<2.0
+
+# --- Vector DB (async client) ---
+qdrant-client>=1.9,<2.0
+
+# --- Redis (async) ---
+redis>=5.0,<6.0
+
+# --- Settings / validation ---
+pydantic>=2.6,<3.0
+pydantic-settings>=2.2,<3.0

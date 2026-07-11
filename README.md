@@ -242,3 +242,52 @@ GET /health   →  200 {"status":"ok","redis":true,"qdrant":true,"llm":true}
 - **Failures degrade gracefully**: cache/state/RAG errors are swallowed and the
   turn proceeds on the base prompt; generation failures stream the Arabic
   fallback then `[DONE]`.
+
+## Offline local LLM smoke test
+
+For a no-network/no-API-key Vapi contract test, run the backend with the built-in
+OpenAI-compatible local stub. This mode streams Arabic chunks through the same
+SSE endpoint and the same input/output guardrails, but disables RAG so it does
+not need OpenAI embeddings or Qdrant.
+
+```bash
+LLM_PROVIDER=local_stub \
+LLM_MODEL=local-restaurant-smoke \
+RAG_ENABLED=false \
+STRICT_DEPENDENCY_HEALTH=false \
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Then verify streaming:
+
+```bash
+curl -N -X POST http://localhost:8000/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "model": "local-restaurant-smoke",
+        "stream": true,
+        "call": {"id": "local-test-call"},
+        "messages": [
+          {"role": "user", "content": "مرحبا بدي احجز طاولة"}
+        ]
+      }'
+```
+
+Vapi runs in the cloud, so it cannot call `localhost` on your laptop. To test
+this local backend from Vapi, expose it with an HTTPS tunnel and put the tunnel
+base URL in the Vapi Custom LLM settings. The helper script below starts the
+local stub backend and opens a temporary Cloudflare Tunnel:
+
+```bash
+./scripts/start_vapi_local.sh
+```
+
+When Cloudflare prints a URL like `https://example.trycloudflare.com`, put only
+that base URL in Vapi. Vapi appends `/chat/completions` automatically:
+
+```text
+https://example.trycloudflare.com
+```
+
+Do **not** put `http://localhost:8000` in Vapi unless Vapi is running on the same
+machine/network and can actually reach that host.

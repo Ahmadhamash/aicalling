@@ -44,12 +44,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # --- OpenAI + Qdrant -------------------------------------------------
     llm.init_client()
-    try:
-        await vector_db.ensure_collection()
-    except Exception:
-        # Missing/unreachable collection shouldn't stop the app from booting;
-        # /health will report it and RAG degrades gracefully.
-        logger.warning("could not ensure Qdrant collection at startup", exc_info=True)
+    if settings.rag_enabled:
+        try:
+            await vector_db.ensure_collection()
+        except Exception:
+            # Missing/unreachable collection shouldn't stop the app from booting;
+            # /health will report it and RAG degrades gracefully.
+            logger.warning("could not ensure Qdrant collection at startup", exc_info=True)
+    else:
+        logger.info("RAG disabled; skipping Qdrant collection warm-up")
 
     # --- Warm the hot path ----------------------------------------------
     try:
@@ -96,10 +99,14 @@ async def health() -> JSONResponse:
     except Exception:
         logger.warning("redis health check failed", exc_info=True)
 
-    qdrant_ok = await vector_db.health_check()
+    qdrant_ok = True if not settings.rag_enabled else await vector_db.health_check()
     llm_ok = await llm.llm_health_check()
 
-    healthy = redis_ok and qdrant_ok and llm_ok
+    healthy = llm_ok and (
+        (redis_ok and qdrant_ok)
+        if settings.strict_dependency_health
+        else ((not settings.rag_enabled or qdrant_ok))
+    )
     body = {
         "status": "ok" if healthy else "degraded",
         "redis": redis_ok,

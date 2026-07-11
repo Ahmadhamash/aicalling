@@ -12,6 +12,7 @@ one sentence — never the whole reply — and no second LLM is ever called.
 
 from __future__ import annotations
 
+import asyncio
 from typing import AsyncIterator
 
 from openai import AsyncOpenAI
@@ -30,6 +31,9 @@ def init_client() -> AsyncOpenAI:
     """Create the shared AsyncOpenAI client (called from the app lifespan)."""
 
     global _client
+    if settings.llm_provider == "local_stub":
+        return AsyncOpenAI(api_key="local-dev")
+
     if _client is None:
         _client = AsyncOpenAI(
             api_key=settings.openai_api_key,
@@ -62,6 +66,12 @@ async def close_client() -> None:
 async def embed(text: str) -> list[float]:
     """Return the embedding for ``text``, using the Redis cache when possible."""
 
+    if settings.llm_provider == "local_stub":
+        # Deterministic lightweight vector for offline smoke tests. Production
+        # RAG should use real embeddings with ``LLM_PROVIDER=openai``.
+        seed = abs(hash(text)) % 997
+        return [((seed + i) % 997) / 997.0 for i in range(settings.embedding_dim)]
+
     cached = await cache.get_embedding(text)
     if cached is not None:
         return cached
@@ -86,6 +96,10 @@ async def warm() -> None:
     setup cost inside their TTFT budget. Failures are logged, not fatal.
     """
 
+    if settings.llm_provider == "local_stub":
+        logger.info("local_stub warm-up complete")
+        return
+
     try:
         stream = await get_client().chat.completions.create(
             model=settings.llm_model,
@@ -108,6 +122,9 @@ async def warm() -> None:
 async def llm_health_check() -> bool:
     """Cheap reachability probe for ``/health`` (lists models)."""
 
+    if settings.llm_provider == "local_stub":
+        return True
+
     try:
         await get_client().models.retrieve(settings.llm_model)
         return True
@@ -120,8 +137,35 @@ async def llm_health_check() -> bool:
 # Raw streaming
 # --------------------------------------------------------------------------- #
 
+def _last_user_message(messages: list[dict[str, str]]) -> str:
+    for message in reversed(messages):
+        if message.get("role") == "user":
+            return message.get("content", "")
+    return ""
+
+
+def _local_stub_reply(messages: list[dict[str, str]]) -> str:
+    user_text = _last_user_message(messages)
+    if any(word in user_text for word in ("مرحبا", "هلا", "السلام", "اهلا", "أهلا")):
+        return "هلا والله، أنا نوا من المطعم. كيف بقدر أساعدك اليوم؟"
+    if any(word in user_text for word in ("دوام", "ساعات", "متى", "أوقات")):
+        return "أكيد، للتجربة المحلية بقدر أحكيلك إن الدوام لازم يطلع من قاعدة معرفة المطعم. إذا بدك بعطيك رابط الحجز أو بحولك لموظف."
+    if any(word in user_text for word in ("حجز", "طاولة", "احجز")):
+        return "تمام، بقدر أساعدك بالحجز. احكيلي اليوم، الساعة، وعدد الأشخاص."
+    if any(word in user_text for word in ("منيو", "قائمة", "سعر", "أسعار")):
+        return "بالنسبة للمنيو والأسعار، لازم أعتمد على معلومات المطعم الرسمية. ممكن تحددلي الصنف اللي بتسأل عنه؟"
+    return "تمام، وصلتني. أنا نسخة تجربة محلية ستريمنج للمطاعم، وبقدر أساعد بالحجز، المنيو، ساعات الدوام، أو أوصلك مع موظف."
+
+
 async def _raw_stream(messages: list[dict[str, str]]) -> AsyncIterator[str]:
     """Yield raw content deltas from the model as they arrive."""
+
+    if settings.llm_provider == "local_stub":
+        reply = _local_stub_reply(messages)
+        for i in range(0, len(reply), 12):
+            await asyncio.sleep(0.04)
+            yield reply[i : i + 12]
+        return
 
     stream = await get_client().chat.completions.create(
         model=settings.llm_model,

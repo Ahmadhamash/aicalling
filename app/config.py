@@ -30,7 +30,11 @@ class Settings(BaseSettings):
     log_level: str = Field("INFO", description="Root log level")
 
     # --- OpenAI / LLM -----------------------------------------------------
-    openai_api_key: str = Field(..., description="OpenAI API key")
+    openai_api_key: str = Field("local-dev", description="OpenAI API key")
+    llm_provider: str = Field(
+        "openai",
+        description="LLM provider: openai for API-compatible backends, local_stub for offline local testing",
+    )
     openai_base_url: str | None = Field(
         None, description="Optional override for OpenAI-compatible gateways"
     )
@@ -54,6 +58,7 @@ class Settings(BaseSettings):
     rag_score_threshold: float = Field(
         0.30, description="Minimum cosine score to keep a retrieved chunk"
     )
+    rag_enabled: bool = Field(True, description="Enable embedding + Qdrant retrieval")
 
     # --- Redis ------------------------------------------------------------
     redis_url: str = Field("redis://localhost:6379/0", description="Redis URL")
@@ -65,6 +70,10 @@ class Settings(BaseSettings):
     )
     history_turns: int = Field(
         6, description="Number of recent turns to load into the prompt"
+    )
+    strict_dependency_health: bool = Field(
+        True,
+        description="Require Redis and Qdrant in /health; disable only for offline local LLM smoke tests",
     )
 
     # --- Guardrails / behaviour ------------------------------------------
